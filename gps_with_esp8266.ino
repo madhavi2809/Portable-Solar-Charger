@@ -1,160 +1,140 @@
+#include <TinyGPS++.h> // library for GPS module
 #include <SoftwareSerial.h>
+#include <ESP8266WiFi.h>
+#include <LiquidCrystal_I2C.h>  //library for LCD
+LiquidCrystal_I2C lcd(0x27, 16, 2); // LCD HEX address 0x27
 
-//Install the following Libraries
-#include <TinyGPS++.h>
-#include <SerialESP8266wifi.h>
-
-//GPS Module RX pin to NodeMCU D1
-//GPS Module TX pin to NodeMCU D2
-const int RXPin = 4, TXPin = 6;
-SoftwareSerial neo6m(RXPin, TXPin);
-
-TinyGPSPlus gps;
-             
-const char *ssid = "ENTER_YOUR_WIFI_SSID";
-const char *password = "ENTER_YOUR_WIFI_PASSWORD";
-
-String GMAP_API_KEY = "ENTER_GOOGLE_MAPS_API_KEY";
-
+TinyGPSPlus gps;  // The TinyGPS++ object
+SoftwareSerial ss(4, 5); // The serial connection to the GPS device
+const char* ssid = "ssid"; //ssid of your wifi
+const char* password = "pswd"; //password of your wifi
+float latitude , longitude;
+int year , month , date, hour , minute , second;
+String date_str , time_str , lat_str , lng_str;
+int pm;
 WiFiServer server(80);
-
-String html;
 
 void setup()
 {
   Serial.begin(115200);
+  ss.begin(9600);
+  lcd.begin();
   Serial.println();
-  neo6m.begin(9600);
-
-    Serial.print("Connecting to ");
-    Serial.println(ssid);
-
-    WiFi.begin(ssid, password);
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(".");
-    }
-    Serial.println("");
-    Serial.println("WiFi connected");
-    Serial.println("IP address: ");    // this is the address to use for viewing the map
-    Serial.println(WiFi.localIP());
-    server.begin();
-      
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+  WiFi.begin(ssid, password); //connecting to wifi
+  while (WiFi.status() != WL_CONNECTED)// while wifi not connected
+  {
+    delay(500);
+    Serial.print("."); //print "...."
+  }
+  Serial.println("");
+  Serial.println("WiFi connected");
+  server.begin();
+  Serial.println("Server started");
+  Serial.println(WiFi.localIP());  // Print the IP address
 }
+
 
 void loop()
 {
-  smartdelay_gps(1000);
-  
-  if (gps.location.isValid()) 
-  {
-    //Storing the Latitude. and Longitude
-    String latitude = String(gps.location.lat(), 6);
-    String longitude = String(gps.location.lng(), 6); 
-    
-    //Send to Serial Monitor for Debugging
-    //Serial.print("LAT:  ");
-    //Serial.println(latitude);  // float to x decimal places
-    //Serial.print("LONG: ");
-    //Serial.println(longitude);
+  while (ss.available() > 0) //while data is available
+    if (gps.encode(ss.read())) //read gps data
+    {
+      if (gps.location.isValid()) //check whether gps location is valid
+      {
+        latitude = gps.location.lat();
+        lat_str = String(latitude , 6); // latitude location is stored in a string
+        lcd.setCursor(0,0);
+        lcd.print("Lat: " + lat_str);
+        longitude = gps.location.lng();
+        lng_str = String(longitude , 6); //longitude location is stored in a string
+        lcd.setCursor(0,1);
+        lcd.print("Long: " + lng_str);
+      }
+      if (gps.date.isValid()) //check whether gps date is valid
+      {
+        date_str = "";
+        date = gps.date.day();
+        month = gps.date.month();
+        year = gps.date.year();
+        if (date < 10)
+          date_str = '0';
+        date_str += String(date);// values of date,month and year are stored in a string
+        date_str += " / ";
 
-    // listen for incoming clients
-    WiFiClient client = server.available();
-    if(client) {                             
-    Serial.println("new client");          
-    String currentLine = "";                // make a String to hold incoming data from the client
-    while (client.connected()) {            
-      if (client.available()) {             // if there's client data
-        char c = client.read();          // read a byte
-          if (c == '\n') {                      // check for newline character,
-          if (currentLine.length() == 0) {  // if line is blank it means its the end of the client HTTP request
-      
-    //MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
-    html="<!DOCTYPE html>";
-    html+="<html lang='en'>";
-    html+="<head>";
-    html+="<meta charset='UTF-8'>";
-    html+="<meta name='viewport' content='width=device-width, initial-scale=1.0'>";
-    html+="<meta http-equiv='X-UA-Compatible' content='ie=edge'>";
-    html+="<title>My Google Map</title>";
-    html+="<style>#map{height:400px;width:100%;}</style>";
-    html+="</head>";
-    html+="<body>";
-    html+="<h1>My Google Map</h1>";
-    html+="<div id='map'></div>";
-    html+="<script>";
-    //MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
-    
-    html+="var map;";
-    html+="var marker;";
-    
-    //5000ms means 5000/1000 = 5 Seconds
-    //20000ms means 20000/1000 = 20 Seconds
-    html+="var INTERVAL = 5000;";
-    
-    //MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
-    html+="function initMap(){";
-      //NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN
-      html+="var options = {";
-          html+="zoom:16,";
-          html+="center:{lat:"+latitude+",lng:"+longitude+"},";
-          html+="mapTypeId: google.maps.MapTypeId.ROADMAP,";
-      html+="};";
-      //NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN
-      html+="map = new google.maps.Map(document.getElementById('map'), options);";
-    html+="}";
-    //MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
-
-    //MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
-    html+="function getMarkers() {";
-      //html+="console.log("+latitude+");";
-      //html+="console.log("+longitude+");";
-      
-      html+="var newLatLng = new google.maps.LatLng("+latitude+", "+longitude+");";
-      //NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN
-      html+="marker = new google.maps.Marker({";
-        html+="position: newLatLng,";
-        html+="map: map";
-      html+="});";
-      //NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN
-    html+="}";
-    //MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
-
-    //MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
-    html+="window.setInterval(getMarkers,INTERVAL);";
-    
-    html+="</script>";
-    html+="<script async defer src='https://maps.googleapis.com/maps/api/js?key="+GMAP_API_KEY+"&callback=initMap'>";
-    html+="</script>";
-    html+="</body></html>";
-    //MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM
- 
- client.print(html);
-
-            // The HTTP response ends with another blank line:
-            client.println();
-            // break out of the while loop:
-            break;
-          } else {   currentLine = ""; }
-        } else if (c != '\r') {  // if you got anything else but a carriage return character,
-          currentLine += c; // add it to the end of the currentLine
+        if (month < 10)
+          date_str += '0';
+        date_str += String(month); // values of date,month and year are stored in a string
+        date_str += " / ";
+        if (year < 10)
+          date_str += '0';
+        date_str += String(year); // values of date,month and year are stored in a string
+      }
+      if (gps.time.isValid())  //check whether gps time is valid
+      {
+        time_str = "";
+        hour = gps.time.hour();
+        minute = gps.time.minute();
+        second = gps.time.second();
+        minute = (minute + 30); // converting to IST
+        if (minute > 59)
+        {
+          minute = minute - 60;
+          hour = hour + 1;
         }
-         // here you can check for any keypresses if your web server page has any
+        hour = (hour + 5) ;
+        if (hour > 23)
+          hour = hour - 24;   // converting to IST
+        if (hour >= 12)  // checking whether AM or PM
+          pm = 1;
+        else
+          pm = 0;
+        hour = hour % 12;
+        if (hour < 10)
+          time_str = '0';
+        time_str += String(hour); //values of hour,minute and time are stored in a string
+        time_str += " : ";
+        if (minute < 10)
+          time_str += '0';
+        time_str += String(minute); //values of hour,minute and time are stored in a string
+        time_str += " : ";
+        if (second < 10)
+          time_str += '0';
+        time_str += String(second); //values of hour,minute and time are stored in a string
+        if (pm == 1)
+          time_str += " PM ";
+        else
+          time_str += " AM ";
       }
     }
-    // close the connection:
-    client.stop();
-    Serial.println("client disconnected");
-    }    
-  }
-}
-
-static void smartdelay_gps(unsigned long ms)
-{
-  unsigned long start = millis();
-  do 
+ 
+ WiFiClient client = server.available(); // Check if a client has connected
+  if (!client)
   {
-    while (neo6m.available())
-      gps.encode(neo6m.read());
-  } while (millis() - start < ms);
-}
+    return;
+  }
+  // Prepare the response
+  String s = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n <!DOCTYPE html> <html> <head> <title>GPS DATA</title> <style>";
+  s += "a:link {background-color: YELLOW;text-decoration: none;}";
+  s += "table, th, td </style> </head> <body> <h1  style=";
+  s += "font-size:300%;";
+  s += " ALIGN=CENTER> GPS DATA</h1>";
+  s += "<p ALIGN=CENTER style=""font-size:150%;""";
+  s += "> <b>Location Details</b></p> <table ALIGN=CENTER style=";
+  s += "width:50%";
+  s += "> <tr> <th>Latitude</th>";
+  s += "<td ALIGN=CENTER >";
+  s += lat_str;
+  s += "</td> </tr> <tr> <th>Longitude</th> <td ALIGN=CENTER >";
+  s += lng_str;
+  s += "</td> </tr> <tr>  <th>Date</th> <td ALIGN=CENTER >";
+  s += date_str;
+  s += "</td></tr> <tr> <th>Time</th> <td ALIGN=CENTER >";
+  s += time_str;
+  s += "</td>  </tr> </table> ";
+ 
+  s += "</body> </html>"
+
+  client.print(s); // all the values are send to the webpage
+  delay(100);
